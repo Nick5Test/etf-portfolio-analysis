@@ -25,7 +25,7 @@ source .venv/bin/activate     # Mac/Linux
 pip install -r requirements.txt
 
 # Esegui gli script in ordine
-python 01_download_and_quality.py
+python 01_download_and_quality.pygit 
 python 02_performance_analysis.py
 python 03_crisis_analysis.py
 python 04_portfolio_optimization.py
