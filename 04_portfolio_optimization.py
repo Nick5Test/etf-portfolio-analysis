@@ -2,9 +2,9 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from pypfopt import EfficientFrontier, risk_models, expected_returns, plotting
 import os
 import warnings
+from pypfopt import EfficientFrontier, risk_models, expected_returns
 warnings.filterwarnings("ignore")
  
 ETFs = {
@@ -47,7 +47,7 @@ def compute_optimization_inputs(prices: pd.DataFrame):
     mu = expected_returns.mean_historical_return(prices)
  
     # Matrice di covarianza
-    cov_matrix = risk_models.ledoit_wolf(prices)
+    cov_matrix = risk_models.CovarianceShrinkage(prices).ledoit_wolf()
  
     return mu, cov_matrix
  
@@ -249,14 +249,11 @@ def plot_correlation_heatmap(prices: pd.DataFrame):
  
 if __name__ == "__main__":
  
-    # 1. Carica i dati
     prices = load_prices(os.path.join(DATA_DIR, "prices_clean.csv"))
  
-    # 2. Calcola gli input per l'ottimizzazione
     print("\n⚙️  Calcolo input per ottimizzazione...")
     mu, cov_matrix = compute_optimization_inputs(prices)
  
-    # 3. Ottimizza i 3 portafogli
     print("🔧 Ottimizzazione in corso...")
     results = {
         "Max Sharpe":    optimize_max_sharpe(mu, cov_matrix),
@@ -264,11 +261,9 @@ if __name__ == "__main__":
         "Crisis-Aware":  optimize_crisis_aware(prices, mu, cov_matrix),
     }
  
-    # 4. Stampa i risultati nel terminale
     for name, result in results.items():
         print_portfolio_results(name, result)
  
-    # 5. Salva i risultati come CSV
     for name, result in results.items():
         weights_df = pd.DataFrame.from_dict(
             result["weights"], orient="index", columns=["Peso"]
@@ -278,7 +273,6 @@ if __name__ == "__main__":
         weights_df.to_csv(os.path.join(DATA_DIR, filename))
     print("\n💾 Pesi portafogli salvati in data/")
  
-    # 6. Grafici
     plot_correlation_heatmap(prices)
     plot_portfolio_comparison(results)
     plot_allocations(results)
