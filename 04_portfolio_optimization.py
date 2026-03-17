@@ -2,9 +2,9 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from pypfopt import EfficientFrontier, risk_models, expected_returns, plotting
 import os
 import warnings
+from pypfopt import EfficientFrontier, risk_models, expected_returns
 warnings.filterwarnings("ignore")
  
 ETFs = {
@@ -40,20 +40,14 @@ def load_prices(filepath: str) -> pd.DataFrame:
  
 def compute_optimization_inputs(prices: pd.DataFrame):
     """
-    Calcola i due ingredienti fondamentali per l'ottimizzazione:
     - mu: rendimenti attesi per ogni ETF
     - cov_matrix: matrice di covarianza tra gli ETF
- 
-    La covarianza misura quanto due ETF si muovono insieme.
-    Alta covarianza = si muovono nella stessa direzione (meno diversificazione)
-    Bassa covarianza = si muovono indipendentemente (più diversificazione)
     """
     # Rendimenti attesi — media storica annualizzata
     mu = expected_returns.mean_historical_return(prices)
  
-    # Matrice di covarianza — Ledoit-Wolf è più stabile della covarianza classica
-    # su serie storiche lunghe con molti asset
-    cov_matrix = risk_models.ledoit_wolf(prices)
+    # Matrice di covarianza
+    cov_matrix = risk_models.CovarianceShrinkage(prices).ledoit_wolf()
  
     return mu, cov_matrix
  
@@ -66,10 +60,10 @@ def optimize_max_sharpe(mu: pd.Series, cov_matrix: pd.DataFrame) -> dict:
     ef = EfficientFrontier(mu, cov_matrix)
     ef.max_sharpe(risk_free_rate=RISK_FREE_RATE)
  
-    # clean_weights() arrotonda i pesi molto piccoli a zero
+    #arrotonda i pesi piccoli a zero
     weights = ef.clean_weights()
  
-    # performance() restituisce rendimento atteso, volatilità e Sharpe
+    #rendimento atteso, volatilità e Sharpe
     performance = ef.portfolio_performance(risk_free_rate=RISK_FREE_RATE)
  
     return {"weights": weights, "performance": performance}
@@ -91,18 +85,9 @@ def optimize_min_volatility(mu: pd.Series, cov_matrix: pd.DataFrame) -> dict:
  
 def optimize_crisis_aware(prices: pd.DataFrame, mu: pd.Series,
                           cov_matrix: pd.DataFrame) -> dict:
-    """
-    Portafoglio che pesa gli ETF in base alla loro resilienza nelle crisi.
-    ETF che hanno resistito meglio storicamente ricevono un peso maggiore.
- 
-    La logica:
-    1. Calcola il drawdown medio di ogni ETF in tutte le crisi
-    2. Inverte i valori — chi ha perso meno riceve un punteggio più alto
-    3. Normalizza i punteggi a somma 1 — diventano i pesi del portafoglio
-    """
+   
     # Calcola drawdown medio nelle crisi per ogni ETF
     crisis_drawdowns = {}
- 
     for crisis_name, (start, end) in CRISES.items():
         # Verifica disponibilità dati nel periodo
         available      = prices.loc[start:end].dropna(axis=1, how="all").columns
@@ -111,20 +96,11 @@ def optimize_crisis_aware(prices: pd.DataFrame, mu: pd.Series,
         drawdown       = ((crisis_prices - pre_crisis) / pre_crisis).min()
         crisis_drawdowns[crisis_name] = drawdown
  
-    # DataFrame con i drawdown — righe = crisi, colonne = ETF
+    
     drawdown_df = pd.DataFrame(crisis_drawdowns).T
- 
-    # Media dei drawdown per ogni ETF (valore negativo — es. -0.25)
     mean_drawdown = drawdown_df.mean()
- 
-    # Inverte il segno — chi ha perso meno ha il valore più alto
-    # es. -0.10 diventa 0.10 (resiliente), -0.50 diventa -0.30 (vulnerabile)
     resilience_score = -mean_drawdown
- 
-    # Considera solo gli ETF con score positivo — esclude i più vulnerabili
     resilience_score = resilience_score[resilience_score > 0]
- 
-    # Normalizza a somma 1 — trasforma i punteggi in pesi percentuali
     weights_raw = resilience_score / resilience_score.sum()
  
     # Arrotonda e converti in dizionario
@@ -273,14 +249,11 @@ def plot_correlation_heatmap(prices: pd.DataFrame):
  
 if __name__ == "__main__":
  
-    # 1. Carica i dati
     prices = load_prices(os.path.join(DATA_DIR, "prices_clean.csv"))
  
-    # 2. Calcola gli input per l'ottimizzazione
     print("\n⚙️  Calcolo input per ottimizzazione...")
     mu, cov_matrix = compute_optimization_inputs(prices)
  
-    # 3. Ottimizza i 3 portafogli
     print("🔧 Ottimizzazione in corso...")
     results = {
         "Max Sharpe":    optimize_max_sharpe(mu, cov_matrix),
@@ -288,11 +261,9 @@ if __name__ == "__main__":
         "Crisis-Aware":  optimize_crisis_aware(prices, mu, cov_matrix),
     }
  
-    # 4. Stampa i risultati nel terminale
     for name, result in results.items():
         print_portfolio_results(name, result)
  
-    # 5. Salva i risultati come CSV
     for name, result in results.items():
         weights_df = pd.DataFrame.from_dict(
             result["weights"], orient="index", columns=["Peso"]
@@ -302,7 +273,6 @@ if __name__ == "__main__":
         weights_df.to_csv(os.path.join(DATA_DIR, filename))
     print("\n💾 Pesi portafogli salvati in data/")
  
-    # 6. Grafici
     plot_correlation_heatmap(prices)
     plot_portfolio_comparison(results)
     plot_allocations(results)
